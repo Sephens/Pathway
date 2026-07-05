@@ -309,14 +309,31 @@ const CSS_VARS = `
   .jat-ai-box { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 14px; background: var(--accent-soft); }
   .jat-ai-result { background: var(--surface-2); border:1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; font-size: 13px; line-height:1.6; white-space: pre-wrap; margin-top: 10px; max-height: 320px; overflow-y:auto; }
 
+  .jat-templates-layout { display:grid; grid-template-columns: 260px 1fr; gap: 16px; }
+  .jat-btn-label { display:inline; }
+  .jat-cal-head-full { display:inline; }
+  .jat-cal-head-short { display:none; }
   .jat-mobile-menu-btn { display:none; }
+
+  .jat-tabs { overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; }
+  .jat-tabs::-webkit-scrollbar { height:0; }
+  .jat-tab { flex-shrink:0; }
+
+  .jat-board { scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .jat-column { scroll-snap-align: start; }
 
   @media (max-width: 980px) {
     .jat-stats-grid { grid-template-columns: repeat(2,1fr); }
     .jat-dash-grid { grid-template-columns: 1fr; }
     .jat-grid-3 { grid-template-columns: repeat(2,1fr); }
     .jat-field-row { grid-template-columns: 1fr; }
+    .jat-templates-layout { grid-template-columns: 220px 1fr; }
   }
+
+  @media (max-width: 780px) {
+    .jat-templates-layout { grid-template-columns: 1fr; }
+  }
+
   @media (max-width: 720px) {
     .jat-sidebar { position: fixed; left:0; top:0; transform: translateX(-100%); box-shadow: var(--shadow-lg); }
     .jat-sidebar.open { transform: translateX(0); }
@@ -324,9 +341,49 @@ const CSS_VARS = `
     .jat-stats-grid { grid-template-columns: 1fr 1fr; }
     .jat-grid-3, .jat-grid-2 { grid-template-columns: 1fr; }
     .jat-content { padding: 16px; }
-    .jat-topbar { padding: 0 12px; }
+    .jat-topbar { padding: 0 12px; gap: 8px; }
     .jat-search { display:none; }
     .jat-page-title { font-size: 20px; }
+    .jat-page-head { gap: 10px; }
+    .jat-modal-overlay { padding: 14px; }
+    .jat-modal-head, .jat-modal-body, .jat-modal-foot { padding-left: 16px; padding-right: 16px; }
+    .jat-column { min-width: 82vw; width: 82vw; }
+    .jat-btn, .jat-btn-icon { min-height: 38px; }
+  }
+
+  @media (max-width: 640px) {
+    .jat-btn-label { display:none; }
+    .jat-btn-label-primary { display:inline; }
+    .jat-btn { padding: 8px 11px; }
+    .jat-cal-head-full { display:none; }
+    .jat-cal-head-short { display:inline; }
+    .jat-cal-cell { min-height: 64px; padding: 4px; }
+    .jat-cal-event { font-size: 9.5px; padding: 1px 4px; }
+    .jat-cal-daynum { width:18px; height:18px; font-size:11px; }
+  }
+
+  @media (max-width: 480px) {
+    .jat-stats-grid { grid-template-columns: 1fr; }
+    .jat-stat-value { font-size: 22px; }
+    .jat-page-title { font-size: 18px; }
+    .jat-btn-label-primary { display:none; }
+    .jat-topbar { gap: 6px; }
+    .jat-column { min-width: 88vw; width: 88vw; }
+    .jat-panel, .jat-stat-card, .jat-contact-card, .jat-doc-card, .jat-company-card { padding: 14px; }
+    .jat-content { padding: 12px; }
+    .jat-cal-cell { min-height: 52px; }
+    .jat-cal-event:nth-child(n+3) { display:none; }
+    .jat-modal-overlay { padding: 0; align-items: flex-end; }
+    .jat-modal { border-radius: 16px 16px 0 0; max-height: 94vh; }
+    .jat-filter-bar { gap: 6px; }
+    .jat-chip { padding: 5px 10px; font-size: 12px; }
+    .jat-ring-wrap { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .jat-ring-wrap > div:first-child { align-self: center; }
+  }
+
+  @media (hover: none) and (pointer: coarse) {
+    .jat-app-card { cursor: default; }
+    .jat-nav-item, .jat-btn, .jat-btn-icon, .jat-chip, .jat-viewtoggle button { min-height: 38px; }
   }
 `;
 
@@ -902,10 +959,10 @@ function JobTracker({ session }) {
           </div>
           <div style={{ flex: 1 }} />
           {cloudError && <span style={{ fontSize: 12, color: "var(--danger)" }}>{cloudError}</span>}
-          <button className="jat-btn jat-btn-ghost" onClick={exportBackup}><Download size={14} /> Export</button>
+          <button className="jat-btn jat-btn-ghost" onClick={exportBackup} title="Export backup"><Download size={14} /><span className="jat-btn-label">Export</span></button>
           <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => e.target.files[0] && importBackup(e.target.files[0])} />
-          <button className="jat-btn jat-btn-ghost" onClick={() => fileInputRef.current.click()}><Upload size={14} /> Import</button>
-          <button className="jat-btn jat-btn-primary" onClick={() => setShowNewApp(true)}><Plus size={15} /> Add Application</button>
+          <button className="jat-btn jat-btn-ghost" onClick={() => fileInputRef.current.click()} title="Import backup"><Upload size={14} /><span className="jat-btn-label">Import</span></button>
+          <button className="jat-btn jat-btn-primary" onClick={() => setShowNewApp(true)}><Plus size={15} /><span className="jat-btn-label jat-btn-label-primary">Add Application</span></button>
         </div>
 
         <div className="jat-content jat-fade-in" key={tab}>
@@ -1496,7 +1553,12 @@ function CalendarTab({ events, setEvents, applications }) {
       </div>
 
       <div className="jat-cal-grid">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="jat-cal-headcell">{d}</div>)}
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+          <div key={d} className="jat-cal-headcell">
+            <span className="jat-cal-head-full">{d}</span>
+            <span className="jat-cal-head-short">{d[0]}</span>
+          </div>
+        ))}
         {cells.map((d, i) => (
           <div key={i} className={`jat-cal-cell ${d === null ? "other-month" : ""} ${d && isToday(d) ? "today" : ""}`}
             onClick={() => d && (setSelectedDate(isoFor(d)), setShowAdd(true))} style={{ cursor: d ? "pointer" : "default" }}>
@@ -1779,7 +1841,7 @@ function TemplatesTab({ templates, setTemplates }) {
         <div><div className="jat-page-title">Email Templates</div><div className="jat-page-sub">Reusable drafts for every stage of outreach</div></div>
         <button className="jat-btn jat-btn-primary" onClick={() => setShowAdd(true)}><Plus size={15} /> New Template</button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16 }}>
+      <div className="jat-templates-layout">
         <div className="jat-card" style={{ padding: 8, height: "fit-content" }}>
           {categories.map((cat) => (
             <div key={cat}>
