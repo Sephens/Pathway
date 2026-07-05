@@ -3,12 +3,18 @@ import { createClient } from "@supabase/supabase-js";
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!url || !anonKey) {
-  // Surfaced in the UI too (see Auth.jsx), but this makes it obvious in the console
-  // during local dev if the .env file is missing.
+export const supabaseConfigured = Boolean(url && anonKey);
+
+if (!supabaseConfigured) {
   console.warn(
-    "Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY. Copy .env.example to .env and fill in your Supabase project values."
+    "Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY. Copy .env.example to .env locally, " +
+    "and add both as Environment Variables in your Vercel project (then redeploy)."
   );
 }
 
-export const supabase = createClient(url || "", anonKey || "");
+// Fall back to a syntactically-valid placeholder URL so createClient never throws
+// and crashes the whole app before it can render an on-screen error message.
+export const supabase = createClient(
+  supabaseConfigured ? url : "https://placeholder.supabase.co",
+  supabaseConfigured ? anonKey : "placeholder-anon-key"
+);

@@ -11,7 +11,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   AreaChart, Area, PieChart, Pie, Cell,
 } from "recharts";
-import { supabase } from "./lib/supabaseClient";
+import { supabase, supabaseConfigured } from "./lib/supabaseClient";
 import Auth from "./Auth.jsx";
 
 const CLOUD_TABLE = "job_tracker_data";
@@ -951,10 +951,26 @@ export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking, null = signed out
 
   useEffect(() => {
+    if (!supabaseConfigured) return;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession));
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  if (!supabaseConfigured) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", padding: 24 }}>
+        <div style={{ maxWidth: 440, textAlign: "center" }}>
+          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 10 }}>Supabase isn't configured</div>
+          <div style={{ color: "#6C6E7D", fontSize: 14, lineHeight: 1.6 }}>
+            This deployment is missing <code>VITE_SUPABASE_URL</code> and/or <code>VITE_SUPABASE_ANON_KEY</code>.
+            Add both under Vercel → Project Settings → Environment Variables (or your local <code>.env</code> file),
+            then redeploy — Vite bakes these in at build time, so a plain restart isn't enough.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (session === undefined) {
     return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", color: "#6C6E7D" }}>Loading…</div>;
