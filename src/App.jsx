@@ -11,6 +11,11 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   AreaChart, Area, PieChart, Pie, Cell,
 } from "recharts";
+import { supabase } from "./lib/supabaseClient";
+import Auth from "./Auth.jsx";
+
+const CLOUD_TABLE = "job_tracker_data";
+const DOCS_BUCKET = "documents";
 
 /* ============================================================================
    DESIGN TOKENS
@@ -674,19 +679,23 @@ const NAV = [
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
-export default function JobTracker() {
+function JobTracker({ session }) {
   const [theme, setTheme] = useState("light");
   const [tab, setTab] = useState("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
 
-  const [applications, setApplications] = useState(seedApplications);
-  const [contacts, setContacts] = useState(seedContacts);
-  const [companies, setCompanies] = useState(seedCompanies);
-  const [templates, setTemplates] = useState(seedTemplates);
-  const [events, setEvents] = useState(seedEvents);
-  const [wishlist, setWishlist] = useState(seedWishlist);
+  const [applications, setApplications] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [documents, setDocuments] = useState([]);
+
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+  const [cloudError, setCloudError] = useState("");
+  const userId = session.user.id;
 
   const [activeAppId, setActiveAppId] = useState(null);
   const [showNewApp, setShowNewApp] = useState(false);
@@ -695,6 +704,53 @@ export default function JobTracker() {
   const fileInputRef = useRef(null);
 
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
+
+  // ---- Load this user's data once, on sign-in ----
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from(CLOUD_TABLE).select("data").eq("user_id", userId).maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setCloudError("Couldn't load your data from the cloud. " + error.message);
+        setCloudLoaded(true);
+        return;
+      }
+      if (data && data.data) {
+        const d = data.data;
+        setApplications(d.applications || []);
+        setContacts(d.contacts || []);
+        setCompanies(d.companies || []);
+        setTemplates(d.templates && d.templates.length ? d.templates : seedTemplates());
+        setEvents(d.events || []);
+        setWishlist(d.wishlist || []);
+        setDocuments(d.documents || []);
+      } else {
+        // First time this account has signed in — seed with demo data so the app isn't empty.
+        setApplications(seedApplications());
+        setContacts(seedContacts());
+        setCompanies(seedCompanies());
+        setTemplates(seedTemplates());
+        setEvents(seedEvents());
+        setWishlist(seedWishlist());
+        setDocuments([]);
+      }
+      setCloudLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // ---- Autosave to the cloud (debounced) whenever data changes ----
+  useEffect(() => {
+    if (!cloudLoaded) return;
+    const t = setTimeout(async () => {
+      const payload = { applications, contacts, companies, templates, events, wishlist, documents };
+      const { error } = await supabase.from(CLOUD_TABLE).upsert({ user_id: userId, data: payload, updated_at: new Date().toISOString() });
+      if (error) setCloudError("Couldn't save your latest changes. " + error.message);
+      else setCloudError("");
+    }, 700);
+    return () => clearTimeout(t);
+  }, [applications, contacts, companies, templates, events, wishlist, documents, cloudLoaded, userId]);
 
   const activeApp = useMemo(() => applications.find((a) => a.id === activeAppId) || null, [applications, activeAppId]);
 
@@ -782,11 +838,21 @@ export default function JobTracker() {
         if (data.templates) setTemplates(data.templates);
         if (data.events) setEvents(data.events);
         if (data.wishlist) setWishlist(data.wishlist);
+        if (data.documents) setDocuments(data.documents);
         notify("Backup imported");
       } catch { notify("Import failed — invalid file"); }
     };
     reader.readAsText(file);
   };
+
+  if (!cloudLoaded) {
+    return (
+      <div className="jat-root" data-theme={theme} style={{ alignItems: "center", justifyContent: "center" }}>
+        <style>{CSS_VARS}</style>
+        <div style={{ textAlign: "center", color: "var(--text-2)", fontSize: 14 }}>Loading your workspace…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="jat-root" data-theme={theme}>
@@ -813,10 +879,16 @@ export default function JobTracker() {
             );
           })}
         </nav>
-        <div className="jat-sidebar-foot">
+        <div className="jat-sidebar-foot" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 11.5, color: "var(--text-3)", padding: "0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={session.user.email}>
+            {session.user.email}
+          </div>
           <button className="jat-theme-toggle" onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}>
             {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
             {theme === "light" ? "Dark mode" : "Light mode"}
+          </button>
+          <button className="jat-theme-toggle" onClick={() => supabase.auth.signOut()}>
+            Sign out
           </button>
         </div>
       </aside>
@@ -829,6 +901,7 @@ export default function JobTracker() {
             <input placeholder="Search companies, roles, contacts…" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} />
           </div>
           <div style={{ flex: 1 }} />
+          {cloudError && <span style={{ fontSize: 12, color: "var(--danger)" }}>{cloudError}</span>}
           <button className="jat-btn jat-btn-ghost" onClick={exportBackup}><Download size={14} /> Export</button>
           <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => e.target.files[0] && importBackup(e.target.files[0])} />
           <button className="jat-btn jat-btn-ghost" onClick={() => fileInputRef.current.click()}><Upload size={14} /> Import</button>
@@ -849,7 +922,7 @@ export default function JobTracker() {
           {tab === "companies" && <CompaniesTab companies={companies} setCompanies={setCompanies} applications={applications} search={globalSearch} />}
           {tab === "contacts" && <ContactsTab contacts={contacts} setContacts={setContacts} search={globalSearch} applications={applications} />}
           {tab === "templates" && <TemplatesTab templates={templates} setTemplates={setTemplates} />}
-          {tab === "documents" && <DocumentsTab documents={documents} setDocuments={setDocuments} applications={applications} />}
+          {tab === "documents" && <DocumentsTab documents={documents} setDocuments={setDocuments} applications={applications} userId={userId} />}
           {tab === "settings" && <SettingsTab onExport={exportBackup} onImportClick={() => fileInputRef.current.click()} counts={{ applications: applications.length, contacts: contacts.length, companies: companies.length, documents: documents.length }} />}
         </div>
       </div>
@@ -868,6 +941,26 @@ export default function JobTracker() {
       )}
     </div>
   );
+}
+
+/* ============================================================================
+   AUTH GATE — decides between the sign-in screen and the app itself
+============================================================================ */
+
+export default function App() {
+  const [session, setSession] = useState(undefined); // undefined = still checking, null = signed out
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) {
+    return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", color: "#6C6E7D" }}>Loading…</div>;
+  }
+  if (!session) return <Auth />;
+  return <JobTracker key={session.user.id} session={session} />;
 }
 
 /* ============================================================================
@@ -1751,28 +1844,49 @@ function AddTemplateModal({ onClose, onCreate }) {
    DOCUMENTS
 ============================================================================ */
 
-function DocumentsTab({ documents, setDocuments, applications }) {
+function DocumentsTab({ documents, setDocuments, applications, userId }) {
   const fileRef = useRef(null);
   const [pendingFile, setPendingFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
-  const onFileSelected = (file) => setPendingFile(file);
-  const saveDoc = (meta) => {
-    const url = URL.createObjectURL(pendingFile);
-    setDocuments((prev) => [...prev, { id: uid(), name: pendingFile.name, url, uploadedAt: todayISO(), appIds: [], ...meta }]);
-    setPendingFile(null);
+  const onFileSelected = (file) => { setUploadError(""); setPendingFile(file); };
+
+  const saveDoc = async (meta) => {
+    setUploading(true);
+    setUploadError("");
+    try {
+      const path = `${userId}/${uid()}-${pendingFile.name}`;
+      const { error: uploadErr } = await supabase.storage.from(DOCS_BUCKET).upload(path, pendingFile);
+      if (uploadErr) throw uploadErr;
+      const { data: pub } = supabase.storage.from(DOCS_BUCKET).getPublicUrl(path);
+      setDocuments((prev) => [...prev, { id: uid(), name: pendingFile.name, url: pub.publicUrl, path, uploadedAt: todayISO(), appIds: [], ...meta }]);
+      setPendingFile(null);
+    } catch (err) {
+      setUploadError(err.message || "Upload failed. Make sure the 'documents' storage bucket exists (see README).");
+    } finally {
+      setUploading(false);
+    }
   };
-  const remove = (id) => setDocuments((prev) => prev.filter((d) => d.id !== id));
+
+  const remove = async (id) => {
+    const doc = documents.find((d) => d.id === id);
+    if (doc && doc.path) await supabase.storage.from(DOCS_BUCKET).remove([doc.path]);
+    setDocuments((prev) => prev.filter((d) => d.id !== id));
+  };
   const toggleLink = (docId, appId) => setDocuments((prev) => prev.map((d) => d.id === docId ? { ...d, appIds: d.appIds.includes(appId) ? d.appIds.filter((x) => x !== appId) : [...d.appIds, appId] } : d));
 
   return (
     <div>
       <div className="jat-page-head">
-        <div><div className="jat-page-title">Documents</div><div className="jat-page-sub">Resumes, cover letters, certificates, and portfolio files</div></div>
+        <div><div className="jat-page-title">Documents</div><div className="jat-page-sub">Resumes, cover letters, certificates, and portfolio files — synced to your account</div></div>
         <div>
           <input ref={fileRef} type="file" style={{ display: "none" }} onChange={(e) => e.target.files[0] && onFileSelected(e.target.files[0])} />
           <button className="jat-btn jat-btn-primary" onClick={() => fileRef.current.click()}><Upload size={15} /> Upload Document</button>
         </div>
       </div>
+
+      {uploadError && <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 14 }}>{uploadError}</div>}
 
       {documents.length === 0 ? (
         <EmptyState icon={<FolderOpen size={30} />} title="No documents uploaded" sub="Upload resumes, cover letters, certificates, or portfolio files to keep everything in one place." />
@@ -1813,7 +1927,9 @@ function DocumentsTab({ documents, setDocuments, applications }) {
       {pendingFile && (
         <Modal title="Document Details" size="sm" onClose={() => setPendingFile(null)} footer={
           <><button className="jat-btn jat-btn-soft" onClick={() => setPendingFile(null)}>Cancel</button>
-          <button className="jat-btn jat-btn-primary" onClick={() => saveDoc({ type: document.getElementById("doc-type").value, version: document.getElementById("doc-version").value })}><Check size={14} /> Save</button></>
+          <button className="jat-btn jat-btn-primary" disabled={uploading} onClick={() => saveDoc({ type: document.getElementById("doc-type").value, version: document.getElementById("doc-version").value })}>
+            {uploading ? "Uploading…" : <><Check size={14} /> Save</>}
+          </button></>
         }>
           <div className="jat-field"><label>File</label><input value={pendingFile.name} disabled /></div>
           <div className="jat-field"><label>Type</label>
